@@ -1,7 +1,6 @@
-import os
 import requests
-import datetime
 from collections import Counter
+import os
 
 # Obter configurações das variáveis de ambiente
 TOKEN = os.getenv('GITLAB_TOKEN')
@@ -12,26 +11,47 @@ URL_BASE = os.getenv('GITLAB_API_URL', 'https://gitlab.com/api/v4/projects/')
 if not TOKEN or not REPOSITORIO_IDS:
     raise ValueError("As variáveis de ambiente GITLAB_TOKEN e GITLAB_REPO_IDS são necessárias.")
 
-# Função para obter commits de um repositório
+# Função para obter commits de um repositório com paginação
 def obter_commits(repo_id):
+    commits = []
     url = f"{URL_BASE}{repo_id}/repository/commits"
     headers = {'Authorization': f'Bearer {TOKEN}'}
-    response = requests.get(url, headers=headers)
-    if response.status_code == 200:
-        return response.json()
-    else:
-        print(f"Erro ao buscar commits do repositório {repo_id}: {response.status_code}")
-        return []
+    page = 1
 
-# Contar commits por dia
-contador_commits = Counter()
+    while True:
+        params = {'page': page, 'per_page': 100}  # 100 é o máximo permitido por página
+        response = requests.get(url, headers=headers, params=params)
+        if response.status_code != 200:
+            print(f"Erro ao buscar commits do repositório {repo_id}: {response.status_code}")
+            break
+
+        data = response.json()
+        if not data:
+            break
+
+        commits.extend(data)
+        page += 1
+    
+    return commits
+
+# Processar commits de cada repositório
+relatorios = {}
+contador_total = Counter()
 
 for repo_id in REPOSITORIO_IDS:
+    print(f"Buscando commits para o repositório {repo_id}...")
     commits = obter_commits(repo_id)
-    for commit in commits:
-        data = commit['created_at'].split('T')[0]
-        contador_commits[data] += 1
+    contador = Counter(commit['created_at'].split('T')[0] for commit in commits)
+    relatorios[repo_id] = contador
+    contador_total.update(contador)
 
 # Mostrar resultados
-for data, quantidade in contador_commits.items():
+for repo_id, contador in relatorios.items():
+    print(f"\nRelatório de commits para o repositório {repo_id}:")
+    for data, quantidade in contador.items():
+        print(f"{data}: {quantidade} commits")
+
+print("\nRelatório combinado de todos os repositórios:")
+for data, quantidade in contador_total.items():
     print(f"{data}: {quantidade} commits")
+
